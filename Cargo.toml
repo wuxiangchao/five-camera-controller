@@ -1,0 +1,89 @@
+[package]
+authors = ["WUXIANGCHAO <709894549@qq.com>"]
+name = "five-camera-controller"
+edition = "2021"
+version = "0.1.0"
+
+
+# To run all the tests via `cargo test` the tests need to be explicitly disabled for the binary targets
+# If you use a standard main.rs file the following is sufficient:
+ [[bin]]
+ name = "five-camera-controller-app"
+ path = "src/main.rs"
+ test = false
+
+[[bin]]
+name = "fcc_app"
+path = "src/bin/app.rs"
+test = false
+
+[[bin]]
+name = "bitfield"
+path = "src/bin/bitfield.rs"
+test = true
+
+[lib]
+path = "src/lib.rs"
+harness = false
+
+# needed for each integration test
+[[test]]
+name = "integration"
+harness = false
+
+[dependencies]
+cortex-m = { version = "0.7", features = ["critical-section-single-core"] }
+cortex-m-rt = "0.7"
+cortex-m-rtic = "1.1.4"
+systick-monotonic = "1.0.1"
+defmt = "0.3"
+defmt-rtt = "0.3"
+panic-probe = { version = "0.3", features = ["print-defmt"] }
+semihosting = "0.1.20"
+stm32h7xx-hal = { version = "0.16", features = [
+    "stm32h743v",
+    "sdmmc",
+    "rt",
+    "sdmmc-fatfs",
+    "rtc",
+] }
+embedded-sdmmc = {version =  "0.5.0", default-features = false }
+embedded-hal = "1.0.0"
+embedded-io = { version = "0.6.1", default-features = false}
+embedded-alloc = "0.5.1"
+fatfs = { version = "0.3.6", default-features = false, features = ["alloc", "core_io"] }
+nb = "1.1.0"
+heapless = "0.8.0"
+
+mavio = { version = "0.5.10", default-features = false, features = ["embedded-io","dlct-ardupilotmega"] }
+thiserror-no-std = { version = "2.0.2", default-features = false}
+rtic-monotonic = "1.0.0"
+embedded-hal-nb = "1.0.0"
+
+alloc-cortex-m = "0.4.4"
+alloc-no-stdlib = "2.0.4"
+libm = "0.2.15"
+
+
+[dev-dependencies]
+defmt-test = "0.3"
+
+# cargo build/run
+[profile.dev]
+incremental = false
+opt-level = 's'
+codegen-units = 1
+panic = "abort"
+
+[profile.release]
+opt-level = 's'
+codegen-units = 1
+lto = true
+debug = 2
+panic = "abort"
+
+[features]
+default = ["use_alloc"]
+use_alloc = []
+
+
