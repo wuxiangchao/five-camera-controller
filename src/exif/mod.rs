@@ -1,3 +1,5 @@
+#![allow(unused)]
+
 extern crate alloc_no_stdlib;
 use alloc::vec::Vec;
 use libm::fabs;
@@ -78,7 +80,7 @@ fn itoa(mut n: i32) -> &'static str {
     }
 }
 
-/// 将 EXIF APP1 段插入 JPEG 数据（Vec 版本）
+/// 将EXIF APP1段插入JPEG 数据（Vec 版本）
 pub fn insert_app1_into_jpeg(jpeg_data: &mut [u8], app1: &[u8]) -> Result<(), &'static str> {
     if jpeg_data.len() < 2 || jpeg_data[0] != 0xFF || jpeg_data[1] != 0xD8 {
         return Err("Invalid JPEG header");
@@ -86,6 +88,6 @@ pub fn insert_app1_into_jpeg(jpeg_data: &mut [u8], app1: &[u8]) -> Result<(), &'
 
     // 查找插入点（SOI 后）
     let insert_pos = 2;
-    jpeg_data.splice(insert_pos..insert_pos, app1.iter().cloned());
+    // jpeg_data.splice(insert_pos..insert_pos, app1.iter().cloned());
     Ok(())
 }

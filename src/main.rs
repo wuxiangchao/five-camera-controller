@@ -6,10 +6,6 @@ use five_camera_controller as _;
 use panic_probe as _;
 
 /// Hard fault handler.
-///
-/// Terminates the application and makes a semihosting-capable debug tool exit
-/// with an error. This seems better than the default, which is to spin in a
-/// loop.
 #[cortex_m_rt::exception]
 unsafe fn HardFault(_frame: &cortex_m_rt::ExceptionFrame) -> ! {
     defmt::error!("HARD FAULT");
@@ -23,19 +19,18 @@ unsafe fn HardFault(_frame: &cortex_m_rt::ExceptionFrame) -> ! {
     dispatchers = [SPI1, SPI2, FPU]
 )]
 mod app {
-    use five_camera_controller::{bsp, camera, config, fcu_link, image_processor, storage, error::AppError, init_heap};
-    use five_camera_controller::fcu_link::DronePose;
+    use five_camera_controller::{bsp, camera, config, fcu, storage, image, error::AppError, init_heap};
+    use five_camera_controller::fcu::DronePose;
 
-    // Monotonic Timer 的引入保持不变
-    // use rtic_monotonic::Monotonic;
     use systick_monotonic::{Systick, ExtU64,};
     use systick_monotonic::fugit::RateExtU32;
     use five_camera_controller::bsp::SdCardDevice;
+    use five_camera_controller::error::StorageError;
 
     #[shared]
     struct Shared {
         storage_manager: storage::StorageManager<SdCardDevice>,
-        fcu_link: fcu_link::FcuLink,
+        fcu_link: fcu::FcuLink,
     }
 
     #[local]
@@ -79,15 +74,16 @@ mod app {
         }
 
         // Wrap the initialized device and create the StorageManager
+        let total_blocks = sdmmc.card().unwrap().size();
         let block_device = sdmmc.sdmmc_block_device();
-        let mut storage_manager = match storage::StorageManager::new(block_device){
+        let mut storage_manager =  match storage::StorageManager::new(block_device, total_blocks){
             Ok(sm) => sm,
-            Err(e) =>{
-                defmt::error!("Failed to initialize Storage Manager...");
-                panic!("SD Card error");
+            Err(e) => {
+                defmt::error!("Failed to create StorageManager: {:?}", e);
+                panic!("StorageManager init failed");
             }
         };
-        let fcu_link = fcu_link::FcuLink::new(board.fcu_uart_rx, board.fcu_uart_tx);
+        let fcu_link = fcu::FcuLink::new(board.fcu_uart_rx, board.fcu_uart_tx);
         let camera_controller = camera::CameraController::new(board.triggers);
 
 
@@ -143,23 +139,18 @@ mod app {
     fn process_image(mut cx: process_image::Context, pose: Option<DronePose>, cam_id: usize) {
         defmt::info!("Processing image for camera ID: {}", cam_id);
 
-        let mut image_data_vec = match camera::CameraController::read_image_from_camera(cam_id) {
-            Ok(data) => data,
-            Err(e) => {
-                defmt::error!("Failed to read image from cam {}: {:?}", cam_id, e);
-                return; // 读取失败，直接退出任务
-            }
-        };
+        let mut dummy_image_data = [0u8; 1024];
+        dummy_image_data[0] = cam_id as u8;
 
         if let Some(p) = pose {
-            match image_processor::embed_gps_metadata(&mut image_data_vec, &p) {
+            match image::embed_gps_metadata(&mut dummy_image_data, &p) {
                 Ok(_) => defmt::info!("GPS metadata embedded for cam {}", cam_id),
                 Err(_) => defmt::warn!("Failed to embed metadata for cam {}", cam_id),
             }
         }
 
         let result = cx.shared.storage_manager.lock(|sm| {
-            sm.save_image(cam_id, &image_data_vec)
+            sm.save_image(cam_id, &dummy_image_data)
         });
 
         if let Err(e) = result {

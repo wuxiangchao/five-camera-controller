@@ -18,12 +18,16 @@ pub enum AppError {
 /// Errors related to SD card storage and filesystem operations.
 #[derive(Error, Debug, defmt::Format)]
 pub enum StorageError {
+    #[error("SD Card io failed")]
+    SdCardIoFailed,
     #[error("SD Card initialization failed")]
     SdCardInitFailed,
     #[error("Could not access FAT volume")]
     VolumeAccessFailed,
     #[error("Failed to create directory")]
     DirectoryCreateFailed,
+    #[error("Directory already exist")]
+    DirectoryAlreadyExist,
     #[error("Failed to open file")]
     FileOpenFailed,
     #[error("Failed to write to file")]
@@ -32,6 +36,8 @@ pub enum StorageError {
     FileCloseFailed,
     #[error("Invalid Camera ID")]
     InvalidCameraId,
+    #[error("Unknown error")]
+    UnknownError,
 }
 
 /// Errors related to communication with the Flight Control Unit (FCU).

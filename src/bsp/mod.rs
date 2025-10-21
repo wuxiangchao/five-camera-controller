@@ -55,9 +55,6 @@ pub fn setup(mut dp: pac::Peripherals) -> Board {
     let gpiod = dp.GPIOD.split(ccdr.peripheral.GPIOD);
     let gpioe = dp.GPIOE.split(ccdr.peripheral.GPIOE);
 
-    // Delay Provider
-    // let delay = Delay::new(cp.SYST, ccdr.clocks);
-
     // SDMMC Peripheral Initialization
     // These pins are configured based on your sdcard_test.rs file.
     let clk = gpioc.pc12.into_alternate().speed(gpio::Speed::VeryHigh);

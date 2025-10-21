@@ -2,7 +2,7 @@
 
 use crate::{
     error::{AppError, ImageProcessorError},
-    fcu_link::DronePose,
+    fcu::DronePose,
     exif::{build_exif_segment, insert_app1_into_jpeg}
 };
 
@@ -35,6 +35,6 @@ pub fn embed_gps_metadata(
     defmt::info!("Embedding GPS metadata: {:?}", pose);
     insert_app1_into_jpeg(image_data, &exif)
         .map_err(|_| ImageProcessorError::MetadataEmbedFailed)?;
-    
+
     Ok(())
 }

@@ -15,8 +15,8 @@ pub mod bsp;
 pub mod camera;
 pub mod config;
 pub mod error;
-pub mod fcu_link;
-pub mod image_processor;
+pub mod fcu;
+pub mod image;
 pub mod storage;
 
 pub mod exif;
