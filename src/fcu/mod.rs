@@ -1,14 +1,11 @@
 #![allow(unused)]
 
 use core::fmt;
+use cortex_m::prelude::_embedded_hal_serial_Write;
 use crate::{bsp, error::AppError};
 use defmt;
-use embedded_hal;
-use embedded_hal_nb::serial::Read as _;
-use embedded_hal_nb::serial::Write as _;
-use nb::block;
-use stm32h7xx_hal::serial::{Error as HalSerialError, Rx, Tx};
-use stm32h7xx_hal::prelude::{_embedded_hal_serial_Read, _embedded_hal_serial_Write};
+use nb::block; // 用于 send_error_code
+use stm32h7xx_hal::serial::Tx;
 use embedded_io::{Error as EmbeddedIoErrorTrait, ErrorKind as EmbeddedIoErrorKind, Read as EmbeddedIoRead, ErrorType};
 use mavio::{
     dialects::ardupilotmega as mavlink,
@@ -16,11 +13,16 @@ use mavio::{
     io::EmbeddedIoReader,
     Frame, MavFrame,
     protocol::Versionless,
-    Receiver};
-use mavio::error::{Error as MavioError, IoError};
+    Receiver,
+    error::Error as MavioError, // 使用此别名
+    error::IoError, // 这是 Receiver 的错误类型
+};
 use crate::bsp::pac::UART4;
+use heapless::{Deque, spsc};
+use mavio::prelude::MaybeVersioned;
+// 用于 DequeReader
 
-/// Holds the position and attitude data received from the drone.
+/// 持有从无人机接收到的位置和姿态数据。
 #[derive(Copy, Clone, Debug, defmt::Format, Default)]
 pub struct DronePose {
     pub lat: f64,
@@ -32,107 +34,100 @@ pub struct DronePose {
     pub relative_alt: f32, // Altitude above home
 }
 
-#[derive(Debug)]
-pub enum HalIoError {
-    SerialHalError,
+/// DequeReader 的自定义 IO 错误类型
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+pub enum DequeIoError {
+    /// 一个通用错误（尽管 DequeReader::read 目前不会失败）
+    ReadError,
 }
 
-impl fmt::Display for HalIoError {
+impl fmt::Display for DequeIoError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            HalIoError::SerialHalError => write!(f, "HAL serial error"),
+            DequeIoError::ReadError => write!(f, "DequeReader read error"),
         }
     }
 }
 
-// impl the embedded-io Error trait for our error type
-impl EmbeddedIoErrorTrait for HalIoError {
+impl EmbeddedIoErrorTrait for DequeIoError {
     fn kind(&self) -> EmbeddedIoErrorKind {
         EmbeddedIoErrorKind::Other
     }
 }
 
-impl<R> ErrorType for HalEmbeddedReader<R> {
-    type Error = HalIoError;
+
+pub struct DequeReader<'a, const N: usize> {
+    consumer: &'a mut spsc::Consumer<'a, u8, N>,
 }
 
-// Wrapper that adapts embedded-hal-nb `serial::Read<u8>` to `embedded_io::Read`
-pub struct HalEmbeddedReader<R> {
-    inner: R,
-}
-
-impl<R> HalEmbeddedReader<R> {
-    pub fn new(inner: R) -> Self {
-        Self { inner }
+impl<'a, const N: usize> DequeReader<'a, N> {
+    pub fn new(consumer: &'a mut spsc::Consumer<'a, u8, N>) -> Self {
+        Self { consumer }
     }
 }
 
-impl EmbeddedIoRead for HalEmbeddedReader<Rx<bsp::pac::UART4>> {
-    /// Blocking read into `buf`. We block until at least one byte is available,
-    /// then return number of bytes read (here we read at most 1 byte per call).
+impl<'a, const N: usize> ErrorType for DequeReader<'a, N> {
+    type Error = DequeIoError;
+}
+
+impl<'a, const N: usize> EmbeddedIoRead for DequeReader<'a, N> {
+    /// 阻塞式读取 `buf`。我们阻塞直到至少一个字节可用。
     fn read(&mut self, buf: &mut [u8]) -> Result<usize, Self::Error> {
         if buf.is_empty() {
             return Ok(0);
         }
 
-        match block!((&mut self.inner).read()) {
-            Ok(b) => {
-                buf[0] = b;
-                Ok(1)
+        // 循环（阻塞），直到可以从队列中取出一个字节。
+        let byte = loop {
+            if let Some(b) = self.consumer.dequeue() {
+                break b;
             }
-            Err(_e) => Err(HalIoError::SerialHalError),
-        }
+            cortex_m::asm::nop();
+        };
+
+        // 我们读取了一个字节
+        buf[0] = byte;
+        Ok(1)
     }
 }
 
 
 pub struct FcuLink {
-    receiver: Receiver<IoError, EmbeddedIoReader<HalEmbeddedReader<Rx<bsp::pac::UART4>>>, Versionless>,
     tx: Tx<bsp::pac::UART4>,
-    latest_pose: Option<DronePose>,
 }
 
 impl FcuLink {
-    /// Creates a new FcuLink manager.
-    pub fn new(rx: Rx<bsp::pac::UART4>, tx: Tx<bsp::pac::UART4>) -> Self {
-        let hal_reader = HalEmbeddedReader::new(rx);
-
-        let embedded_reader = EmbeddedIoReader::new(hal_reader);
-
-        let receiver = Receiver::new(embedded_reader);
-
-        Self {
-            receiver,
-            tx,
-            latest_pose: None,
-        }
+    /// 创建一个新的 FcuLink 辅助程序。
+    pub fn new(tx: Tx<bsp::pac::UART4>) -> Self {
+        Self { tx }
     }
 
-    /// Returns the last known pose of the drone.
-    pub fn get_latest_pose(&self) -> Option<DronePose> {
-        self.latest_pose
-    }
-
-    /// Sends a status or error code back to the flight controller.
+    /// 向飞控发送状态或错误代码。
+    /// 这仍然是阻塞的，但假定它从软件任务调用，而不是 ISR。
     pub fn send_error_code(&mut self, code: u8) -> Result<(), AppError> {
         block!(self.tx.write(code)).map_err(|_| AppError::from(crate::error::FcuError::UartWriteFailed))
     }
 
-    /// This function should be called repeatedly from a task or interrupt
-    /// to process incoming data from the UART.
-    /// It will attempt to read and process one frame per call.
-    pub fn process_incoming_data(&mut self) {
-        match self.receiver.recv() {
+    /// 此函数由 main.rs 中的 'process_mavlink' 任务*调用*。
+    /// 它执行接收 MAVLink 帧的阻塞工作。
+    pub fn process_incoming_data(
+        &mut self,
+        receiver: &mut Receiver<IoError, EmbeddedIoReader<DequeReader<1024>>, Versionless>, // 接收 Receiver
+        shared_pose: &mut Option<DronePose>
+    ) {
+        // 这个调用现在是安全的。它阻塞在 DequeReader 上，
+        // DequeReader阻塞在Deque上，
+        match receiver.recv() {
             Ok(frame) => {
-                self.handle_mavlink_frame(&frame);
+                self.handle_mavlink_frame(&frame, shared_pose);
             }
             Err(e) => {
                 match e {
-                    MavioError::Frame { .. } => {
-                        defmt::warn!("MAVLink Frame error");
-                    }
                     MavioError::Io(_) => {
-
+                        defmt::warn!("MAVLink IO error (from DequeReader)");
+                    }
+                    MavioError::Frame(frame_error) => {
+                        defmt::warn!("MAVLink Frame error: {:?}", frame_error);
                     }
                     _ => {
                         defmt::warn!("MAVLink receive error");
@@ -142,24 +137,28 @@ impl FcuLink {
         }
     }
 
-    /// Decodes a MAVLink frame and updates the internal state.
-    fn handle_mavlink_frame(&mut self, frame: &Frame<Versionless>) {
+    /// 解码 MAVLink 帧并更新内部状态。
+    fn handle_mavlink_frame(
+        &mut self,
+        frame: &Frame<Versionless>,
+        shared_pose: &mut Option<DronePose>
+    ) {
         match frame.message_id() {
             Heartbeat::ID => {
                 if let Ok(msg) = frame.decode_message::<Heartbeat>(){
-                    defmt::info!("Receiving heartbeat");
+                    defmt::trace!("Receiving heartbeat");
                 }
             }
             GlobalPositionInt::ID =>{
                 if let Ok(msg) = frame.decode_message::<GlobalPositionInt>(){
-                    self.latest_pose = Some(DronePose {
+                    *shared_pose = Some(DronePose {
                         lat: msg.lat as f64 / 1e7,
                         lon: msg.lon as f64 / 1e7,
                         alt: msg.alt as f32 / 1000.0,
                         relative_alt: msg.relative_alt as f32 / 1000.0,
-                        ..Default::default()
+                        ..Default::default() // roll, pitch, yaw 保持 0.0
                     });
-                    defmt::info!("Updated DronePose: {:?}", self.latest_pose);
+                    defmt::info!("Updated DronePose: {:?}", *shared_pose);
                 }
             }
             CameraFeedback::ID => {
@@ -172,7 +171,9 @@ impl FcuLink {
                     defmt::info!("System status");
                 }
             }
-            _ => {  }
+            _ => {
+
+            }
         }
     }
 }

@@ -7,7 +7,7 @@ use stm32h7xx_hal::{
     rtc::Rtc,
     rcc::rec,
     sdmmc::{SdCard, Sdmmc, SdmmcBlockDevice},
-    serial::{Tx, Rx},
+    serial::{Tx, Rx, Serial}, // <-- 我添加了 Serial，因为您在 setup 中使用了它
 };
 
 /// A type alias for the complex SD card block device type used by embedded-sdmmc.
@@ -22,9 +22,7 @@ pub struct Board {
     /// The five GPIO pins configured as outputs for triggering the cameras.
     pub triggers: CameraTriggers,
     /// The serial port (UART) for communication with the flight controller.
-    pub fcu_uart_tx: Tx<pac::UART4>,
-    ///
-    pub fcu_uart_rx: Rx<pac::UART4>,
+    pub fcu_serial: Serial<pac::UART4>, //
 }
 
 /// A struct to hold all five camera trigger pins, bundled for convenience.
@@ -99,18 +97,17 @@ pub fn setup(mut dp: pac::Peripherals) -> Board {
         cam5: gpioe.pe15.into_push_pull_output(),
     };
 
+    // FCU UART Initialization
     let tx = gpioa.pa0.into_alternate();
     let rx = gpioa.pa1.into_alternate();
     let fcu_serial = dp
         .UART4
         .serial((tx, rx), 115_200.bps(), ccdr.peripheral.UART4, &ccdr.clocks)
         .unwrap();
-    let (fcu_uart_tx, fcu_uart_rx) = fcu_serial.split();
 
     Board {
         sdmmc,
         triggers,
-        fcu_uart_tx,
-        fcu_uart_rx,
+        fcu_serial,
     }
 }

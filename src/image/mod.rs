@@ -21,7 +21,7 @@ use alloc::vec::Vec;
 ///
 /// `Ok(())` if the metadata was successfully embedded, otherwise an `AppError`.
 pub fn embed_gps_metadata(
-    image_data: &mut [u8],
+    image_data: &mut Vec<u8>,
     pose: &DronePose,
 ) -> Result<(), AppError> {
     let exif = build_exif_segment(

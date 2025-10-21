@@ -53,10 +53,12 @@ heapless = "0.8.0"
 
 mavio = { version = "0.5.10", default-features = false, features = ["embedded-io","dlct-ardupilotmega"] }
 thiserror-no-std = { version = "2.0.2", default-features = false}
-embedded-hal-nb = "1.0.0"
 
 alloc-no-stdlib = "2.0.4"
 libm = "0.2.15"
+
+ryu = "1.0"
+itoa = "1.0"
 
 [dependencies.fatfs]
 git = "https://github.com/rafalh/rust-fatfs.git"
