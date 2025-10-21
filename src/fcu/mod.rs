@@ -172,7 +172,7 @@ impl FcuLink {
                     defmt::info!("System status");
                 }
             }
-            _ => unreachable!()
+            _ => {  }
         }
     }
 }
