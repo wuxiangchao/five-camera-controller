@@ -1,7 +1,15 @@
 #![allow(unused)]
 use core::cmp::min;
 use embedded_sdmmc::{blockdevice, BlockDevice, BlockIdx, Block};
-use fatfs::{Error as FatError,IoError, Read, Write, Seek, SeekFrom, IoBase};
+use fatfs::{
+    Error as FatError,
+    IoError,
+    Read,
+    Write,
+    Seek,
+    SeekFrom,
+    IoBase,
+};
 
 extern crate alloc_no_stdlib;
 use alloc::vec::Vec;
@@ -78,14 +86,14 @@ impl<D: BlockDevice> SdFatWrapper<D> {
     }
 }
 
-impl<D: BlockDevice> IoBase for SdFatWrapper<D>
+impl<'a, D: BlockDevice> IoBase for &'a mut SdFatWrapper<D>
 where
     D::Error: core::fmt::Debug,
 {
     type Error = WrapperError;
 }
 
-impl<D: BlockDevice> Read for SdFatWrapper<D>
+impl<'a, D: BlockDevice> Read for &'a mut SdFatWrapper<D>
 where
     D::Error: core::fmt::Debug,
 {
@@ -112,7 +120,7 @@ where
     }
 }
 
-impl<D: BlockDevice> Write for SdFatWrapper<D>
+impl<'a, D: BlockDevice> Write for &'a mut SdFatWrapper<D>
 where
     D::Error: core::fmt::Debug,
 {
@@ -200,7 +208,7 @@ where
     }
 }
 
-impl<D: BlockDevice> Seek for SdFatWrapper<D> {
+impl<'a, D: BlockDevice> Seek for &'a mut SdFatWrapper<D> {
     fn seek(&mut self, pos: SeekFrom) -> Result<u64, Self::Error> {
         let new_pos = match pos {
             SeekFrom::Start(off) => off as i64,
