@@ -27,7 +27,6 @@ mod app {
     use five_camera_controller::bsp::SdCardDevice;
     use five_camera_controller::error::StorageError;
 
-    // USE 语句
     use alloc::vec;
     use alloc::vec::Vec;
     use stm32h7xx_hal::serial::Event as SerialEvent;
@@ -71,7 +70,7 @@ mod app {
     //
     #[init(
         local = [
-            // FCU 队列
+            // FCU队列
             fcu_queue: Queue<u8, 1024> = Queue::new(),
             fcu_prod: Option<Producer<'static, u8, 1024>> = None,
             fcu_cons: Option<Consumer<'static, u8, 1024>> = None,
@@ -119,7 +118,7 @@ mod app {
         defmt::info!("Preparing directories...");
         storage_manager.prepare_directories().expect("Failed to prepare directories");
 
-        // ... (FCU 队列初始化) ...
+        // (FCU 队列初始化)
         let (fcu_tx, mut fcu_rx) = board.fcu_serial.split();
         fcu_rx.listen();
         let fcu_link = fcu::FcuLink::new(fcu_tx);
@@ -147,7 +146,7 @@ mod app {
 
         defmt::info!("System Initialization Complete. Main loop starting.");
 
-        // --- 4. [修复] 从 Local 返回值中移除 storage_manager 和 chunk_queue_cons ---
+        //
         (
             Shared {
                 fcu_byte_queue_prod: static_fcu_prod,
@@ -159,8 +158,6 @@ mod app {
                 fcu_link,
                 fcu_receiver,
                 storage_consumer_handle,
-                // storage_manager 已被移除
-                // chunk_queue_cons 已被移除
             },
             init::Monotonics(mono),
         )
@@ -173,7 +170,7 @@ mod app {
         }
     }
 
-    // --- 生产者 (Producer) 任务 ---
+    // 生产者 (Producer) 任务
     #[task(local = [camera_controller], shared = [latest_pose, chunk_queue_prod])]
     fn trigger_cameras(mut cx: trigger_cameras::Context) {
         defmt::info!("Triggering all cameras...");
